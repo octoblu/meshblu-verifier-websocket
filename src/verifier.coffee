@@ -1,30 +1,61 @@
+_ = require 'lodash'
 async = require 'async'
-MeshbluHttp = require 'meshblu-http'
+MeshbluWebsocket = require 'meshblu-websocket'
 
 class Verifier
+  constructor: ({@meshbluConfig, @onError}) ->
 
-  constructor: ({meshbluConfig}) ->
-    @meshbluHttp = new MeshbluHttp meshbluConfig
+  _connect: =>
+    @meshblu = new MeshbluWebsocket @meshbluConfig
 
   _register: (callback) =>
-    @meshbluHttp.register type: 'meshblu:verifier', (error, @device) =>
+    @_connect()
+    @meshblu.connect (error) =>
       return callback error if error?
-      @meshbluHttp.uuid = @device.uuid
-      @meshbluHttp.token = @device.token
-      callback()
+
+      @meshblu.once 'error', (data) =>
+        callback new Error data
+
+      @meshblu.once 'registered', (data) =>
+        @device = data
+        @meshbluConfig.uuid = @device.uuid
+        @meshbluConfig.token = @device.token
+        @meshblu.close()
+        @_connect()
+        @meshblu.connect (error) =>
+          return callback error if error?
+          callback()
+
+      @meshblu.register type: 'meshblu:verifier'
 
   _whoami: (callback) =>
-    @meshbluHttp.whoami callback
+    @meshblu.once 'whoami', (data) =>
+      callback null, data
+
+    @meshblu.removeAllListeners 'error'
+    @meshblu.once 'error', (data) =>
+      callback new Error data
+
+    @meshblu.whoami()
 
   _unregister: (callback) =>
     return callback() unless @device?
-    @meshbluHttp.unregister @device, callback
+    @meshblu.once 'unregistered', (data) =>
+      callback null, data
+
+    @meshblu.removeAllListeners 'error'
+    @meshblu.once 'error', (data) =>
+      callback new Error data
+
+    @meshblu.unregister @device
 
   verify: (callback) =>
     async.series [
       @_register
       @_whoami
       @_unregister
-    ], callback
+    ], (error) =>
+      @meshblu.close()
+      callback error
 
 module.exports = Verifier

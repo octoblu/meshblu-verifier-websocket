@@ -1,98 +1,105 @@
 shmock = require 'shmock'
 Verifier = require '../src/verifier'
+MockMeshbluWebsocket = require './mock-meshblu-websocket'
 
 describe 'Verifier', ->
-  beforeEach ->
-    @meshblu = shmock 0xd00d
+  beforeEach (done) ->
+    @registerHandler = sinon.stub()
+    @whoamiHandler = sinon.stub()
+    @unregisterHandler = sinon.stub()
+
+    onConnection = (socket) =>
+      sendFrame = (event, data) ->
+        socket.send JSON.stringify [event, data]
+
+      socket.on 'message', ({data}) =>
+        [event, data] = JSON.parse data
+
+        if event == 'register'
+          @registerHandler data, (response) ->
+            return sendFrame 'error', response.error if response?.error?
+            sendFrame 'registered', response
+
+        if event == 'whoami'
+          @whoamiHandler data, (response) ->
+            return sendFrame 'error', response.error if response?.error?
+            sendFrame 'whoami', response
+
+        if event == 'unregister'
+          @unregisterHandler data, (response) ->
+            return sendFrame 'error', response.error if response?.error?
+            sendFrame 'unregistered', response
+
+        if event == 'identity'
+          sendFrame 'ready', uuid: 'some-device', token: 'some-token'
+
+      socket.on 'error', (error) ->
+        throw error
+
+      sendFrame 'identify'
+
+    @meshblu = new MockMeshbluWebsocket port: 0xd00d, onConnection: onConnection
+    @meshblu.start done
 
   afterEach (done) ->
-    @meshblu.close => done()
+    @meshblu.stop => done()
 
   describe '-> verify', ->
+    beforeEach ->
+      meshbluConfig = hostname: 'localhost', port: 0xd00d, protocol: 'ws'
+      @sut = new Verifier {meshbluConfig}
+
     context 'when everything works', ->
       beforeEach ->
-        meshbluConfig = server: 'localhost', port: 0xd00d
-        @sut = new Verifier {meshbluConfig}
+        @registerHandler.yields uuid: 'some-device'
+        @whoamiHandler.yields uuid: 'some-device', type: 'meshblu:verifier'
+        @unregisterHandler.yields null
 
       beforeEach (done) ->
-        @registerHandler = @meshblu.post('/devices')
-          .send(type: 'meshblu:verifier')
-          .reply(201, uuid: 'device-uuid')
-
-        @whoamiHandler = @meshblu.get('/v2/whoami')
-          .reply(200, uuid: 'device-uuid', type: 'meshblu:verifier')
-
-        @unregisterHandler = @meshblu.delete('/devices/device-uuid')
-          .reply(204)
-
         @sut.verify (@error) =>
           done @error
 
       it 'should not error', ->
         expect(@error).not.to.exist
-        expect(@registerHandler.isDone).to.be.true
-        expect(@whoamiHandler.isDone).to.be.true
-        expect(@unregisterHandler.isDone).to.be.true
+        expect(@registerHandler).to.be.called
+        expect(@whoamiHandler).to.be.called
+        expect(@unregisterHandler).to.be.called
 
     context 'when register fails', ->
-      beforeEach ->
-        meshbluConfig = server: 'localhost', port: 0xd00d
-        @sut = new Verifier {meshbluConfig}
-
       beforeEach (done) ->
-        @registerHandler = @meshblu.post('/devices')
-          .send(type: 'meshblu:verifier')
-          .reply(500)
+        @registerHandler.yields error: 'something wrong'
 
         @sut.verify (@error) =>
           done()
 
       it 'should error', ->
         expect(@error).to.exist
-        expect(@registerHandler.isDone).to.be.true
+        expect(@registerHandler).to.be.called
 
     context 'when whoami fails', ->
-      beforeEach ->
-        meshbluConfig = server: 'localhost', port: 0xd00d
-        @sut = new Verifier {meshbluConfig}
-
       beforeEach (done) ->
-        @registerHandler = @meshblu.post('/devices')
-          .send(type: 'meshblu:verifier')
-          .reply(201, uuid: 'device-uuid')
-
-        @whoamiHandler = @meshblu.get('/v2/whoami')
-          .reply(500)
+        @registerHandler.yields uuid: 'some-device'
+        @whoamiHandler.yields error: 'something wrong'
 
         @sut.verify (@error) =>
           done()
 
       it 'should error', ->
         expect(@error).to.exist
-        expect(@registerHandler.isDone).to.be.true
-        expect(@whoamiHandler.isDone).to.be.true
+        expect(@registerHandler).to.be.called
+        expect(@whoamiHandler).to.be.called
 
     context 'when unregister fails', ->
-      beforeEach ->
-        meshbluConfig = server: 'localhost', port: 0xd00d
-        @sut = new Verifier {meshbluConfig}
-
       beforeEach (done) ->
-        @registerHandler = @meshblu.post('/devices')
-          .send(type: 'meshblu:verifier')
-          .reply(201, uuid: 'device-uuid')
-
-        @whoamiHandler = @meshblu.get('/v2/whoami')
-          .reply(200, uuid: 'device-uuid', type: 'meshblu:verifier')
-
-        @unregisterHandler = @meshblu.delete('/devices/device-uuid')
-          .reply(500)
+        @registerHandler.yields uuid: 'some-device'
+        @whoamiHandler.yields uuid: 'some-device', type: 'meshblu:verifier'
+        @unregisterHandler.yields error: 'something wrong'
 
         @sut.verify (@error) =>
           done()
 
       it 'should error', ->
         expect(@error).to.exist
-        expect(@registerHandler.isDone).to.be.true
-        expect(@whoamiHandler.isDone).to.be.true
-        expect(@unregisterHandler.isDone).to.be.true
+        expect(@registerHandler).to.be.called
+        expect(@whoamiHandler).to.be.called
+        expect(@unregisterHandler).to.be.called
