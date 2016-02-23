@@ -7,6 +7,7 @@ describe 'Verifier', ->
     @registerHandler = sinon.stub()
     @whoamiHandler = sinon.stub()
     @unregisterHandler = sinon.stub()
+    @messageHandler = sinon.stub()
 
     onConnection = (socket) =>
       sendFrame = (event, data) ->
@@ -24,6 +25,11 @@ describe 'Verifier', ->
           @whoamiHandler data, (response) ->
             return sendFrame 'error', response.error if response?.error?
             sendFrame 'whoami', response
+
+        if event == 'message'
+          @messageHandler data, (response) ->
+            return sendFrame 'error', response.error if response?.error?
+            sendFrame 'message', response
 
         if event == 'unregister'
           @unregisterHandler data, (response) ->
@@ -46,13 +52,15 @@ describe 'Verifier', ->
 
   describe '-> verify', ->
     beforeEach ->
+      @nonce = Date.now()
       meshbluConfig = hostname: 'localhost', port: 0xd00d, protocol: 'ws'
-      @sut = new Verifier {meshbluConfig}
+      @sut = new Verifier {meshbluConfig, @nonce}
 
     context 'when everything works', ->
       beforeEach ->
         @registerHandler.yields uuid: 'some-device'
         @whoamiHandler.yields uuid: 'some-device', type: 'meshblu:verifier'
+        @messageHandler.yields payload: @nonce
         @unregisterHandler.yields null
 
       beforeEach (done) ->
@@ -63,6 +71,7 @@ describe 'Verifier', ->
         expect(@error).not.to.exist
         expect(@registerHandler).to.be.called
         expect(@whoamiHandler).to.be.called
+        expect(@messageHandler).to.be.called
         expect(@unregisterHandler).to.be.called
 
     context 'when register fails', ->
@@ -89,10 +98,26 @@ describe 'Verifier', ->
         expect(@registerHandler).to.be.called
         expect(@whoamiHandler).to.be.called
 
+    context 'when message fails', ->
+      beforeEach (done) ->
+        @registerHandler.yields uuid: 'some-device'
+        @whoamiHandler.yields uuid: 'some-device', type: 'meshblu:verifier'
+        @messageHandler.yields null
+
+        @sut.verify (@error) =>
+          done()
+
+      it 'should error', ->
+        expect(@error).to.exist
+        expect(@registerHandler).to.be.called
+        expect(@whoamiHandler).to.be.called
+        expect(@messageHandler).to.be.called
+
     context 'when unregister fails', ->
       beforeEach (done) ->
         @registerHandler.yields uuid: 'some-device'
         @whoamiHandler.yields uuid: 'some-device', type: 'meshblu:verifier'
+        @messageHandler.yields payload: @nonce
         @unregisterHandler.yields error: 'something wrong'
 
         @sut.verify (@error) =>

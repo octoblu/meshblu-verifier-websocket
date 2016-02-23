@@ -3,21 +3,21 @@ async = require 'async'
 MeshbluWebsocket = require 'meshblu-websocket'
 
 class Verifier
-  constructor: ({@meshbluConfig, @onError}) ->
+  constructor: ({@meshbluConfig, @onError, @nonce}) ->
+    @nonce ?= Date.now()
 
   _connect: =>
     @meshblu = new MeshbluWebsocket @meshbluConfig
 
   _message: (callback) =>
-    nonce = Date.now()
-
     @meshblu.once 'message', (data) =>
-      return callback new Error 'wrong message received' if data.payload != nonce
+      return callback new Error 'wrong message received' unless data?.payload == @nonce
       callback()
 
     message =
       devices: [@meshbluConfig.uuid]
-      payload: nonce
+      payload: @nonce
+
     @meshblu.message message
 
   _register: (callback) =>
