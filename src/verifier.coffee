@@ -8,6 +8,18 @@ class Verifier
   _connect: =>
     @meshblu = new MeshbluWebsocket @meshbluConfig
 
+  _message: (callback) =>
+    nonce = Date.now()
+
+    @meshblu.once 'message', (data) =>
+      return callback new Error 'wrong message received' if data.payload != nonce
+      callback()
+
+    message =
+      devices: [@meshbluConfig.uuid]
+      payload: nonce
+    @meshblu.message message
+
   _register: (callback) =>
     @_connect()
     @meshblu.connect (error) =>
@@ -53,6 +65,7 @@ class Verifier
     async.series [
       @_register
       @_whoami
+      @_message
       @_unregister
     ], (error) =>
       @meshblu.close()
