@@ -50,7 +50,7 @@ class Verifier
 
     @meshblu.removeAllListeners 'error'
     @meshblu.once 'error', (data) =>
-      callback new Error data
+      callback new Error 'Update Error:', JSON.stringify(data, null, 2)
 
     query = uuid: @meshbluConfig.uuid
     params =
