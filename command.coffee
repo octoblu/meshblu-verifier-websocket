@@ -21,6 +21,7 @@ class Command
     verifier.verify (error) =>
       @die error if error?
       console.log 'meshblu-verifier-websocket successful'
+      process.exit 0
 
   die: (error) =>
     return process.exit(0) unless error?
