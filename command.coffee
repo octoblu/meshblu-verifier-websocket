@@ -12,6 +12,7 @@ class Command
       .parse process.argv
 
   run: =>
+    process.on 'uncaughtException', @die
     @parseOptions()
     timeoutSeconds = 30
     timeoutSeconds = parseInt(process.env.TIMEOUT_SECONDS) if process.env.TIMEOUT_SECONDS
@@ -32,6 +33,8 @@ class Command
   timeoutAndDie: =>
     console.log 'meshblu-verifier-websocket timeout'
     @die new Error 'Timeout Exceeded'
+
+
 
 commandWork = new Command()
 commandWork.run()
