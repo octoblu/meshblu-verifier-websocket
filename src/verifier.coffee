@@ -1,5 +1,5 @@
-_ = require 'lodash'
-async = require 'async'
+_                = require 'lodash'
+async            = require 'async'
 MeshbluWebsocket = require 'meshblu-websocket'
 
 class Verifier
